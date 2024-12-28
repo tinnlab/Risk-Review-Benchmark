@@ -1,0 +1,166 @@
+library(tidyverse)
+library(parallel)
+library(matrixStats)
+library(ipflasso)
+
+RhpcBLASctl::blas_set_num_threads(1)
+RhpcBLASctl::omp_set_num_threads(1)
+Sys.setenv(OMP_NUM_THREADS = 1,
+           OPENBLAS_NUM_THREADS = 1,
+           MKL_NUM_THREADS = 1,
+           VECLIB_MAXIMUM_THREADS = 1,
+           NUMEXPR_NUM_THREADS = 1)
+
+# ### specify the path to the data and saved results
+# datPath <- "/nfs/blanche/share/daotran/SurvivalPrediction/AllData/RP_Data_rds_meth25k"
+# resPath <- "/data/dungp/projects_catalina/risk-review/benchmark/run-results"
+# if (!dir.exists(file.path(resPath, "IPF-LASSO"))) {
+#   dir.create(file.path(resPath, "IPF-LASSO"))
+# }
+
+run <- function(datPath, resPath) {
+  # allFiles <- list.files(datPath)
+  # allFiles <- strsplit(allFiles, ".rds") %>% do.call(what = c)
+  allFiles <- c("TCGA-BLCA", "TCGA-BRCA", "TCGA-CESC", "TCGA-COAD", "TCGA-ESCA", "TCGA-HNSC",
+    "TCGA-KIRC", "TCGA-KIRP", "TCGA-LAML", "TCGA-LGG", "TCGA-LIHC", "TCGA-LUAD",
+    "TCGA-LUSC", "TCGA-PAAD", "TCGA-SARC", "TCGA-STAD", "TCGA-UCEC")
+  # allFiles <- c("TCGA-ESCA", "TCGA-LAML", "TCGA-SARC", "TCGA-STAD", "TCGA-UCEC")
+
+
+
+  ### some functions
+  train_predict <- function(DataList_train, DataList_val) {
+    survTrain <- DataList_train$survival
+    DataList_train_used <- DataList_train[setdiff(names(DataList_train), "survival")]
+
+    survVal <- DataList_val$survival
+    DataList_val_used <- DataList_val[setdiff(names(DataList_val), "survival")]
+
+    ## standardization
+    statsTrain <- lapply(names(DataList_train_used), function(dataType) {
+      dat <- DataList_train_used[[dataType]]
+      sds <- colSds(as.matrix(dat))
+      sds <- sds[sds != 0]
+      means <- colMeans(as.matrix(dat))[names(sds)]
+      if (dataType == "clinical") {
+        cateid <- c()
+        for (col in names(means)) {
+          if (length(unique(dat[, col])) <= 5) {
+            cateid <- c(cateid, col)
+          }
+        }
+        means[cateid] <- 0
+        sds[cateid] <- 1
+      }
+      list(means = means, sds = sds)
+    }) %>% `names<-`(names(DataList_train_used))
+
+    DataList_train_used <- lapply(names(DataList_train_used), function(dataType) {
+      dat <- DataList_train_used[[dataType]]
+      means <- statsTrain[[dataType]]$means
+      sds <- statsTrain[[dataType]]$sds
+      dat <- as.matrix(dat[, names(means)])
+      dat <- sweep(dat, 2, means, `-`)
+      dat <- sweep(dat, 2, sds, `/`)
+    }) %>% `names<-`(names(DataList_train_used))
+
+    DataList_val_used <- lapply(names(DataList_val_used), function(dataType) {
+      dat <- DataList_val_used[[dataType]]
+      means <- statsTrain[[dataType]]$means
+      sds <- statsTrain[[dataType]]$sds
+      dat <- as.matrix(dat[, names(means)])
+      dat <- sweep(dat, 2, means, `-`)
+      dat <- sweep(dat, 2, sds, `/`)
+    }) %>% `names<-`(names(DataList_val_used))
+
+    # if ("clinical" %in% names(DataList_train_used)){
+    #   # keep <- grep("age_at_initial", colnames(DataList_train_used$clinical))
+    #   # DataList_train_used$clinical <- as.matrix(DataList_train_used$clinical[, keep])
+    #   # DataList_val_used$clinical <- as.matrix(DataList_val_used$clinical[, keep])
+    #
+    #   colkeeps <- c("age_at_initial_pathologic_diagnosis", "history_other_malignancy__no")
+    #   DataList_train_used$clinical <- as.matrix(DataList_train_used$clinical[, colkeeps])
+    #   DataList_val_used$clinical <- as.matrix(DataList_val_used$clinical[, colkeeps])
+    # }
+
+    blockIndices <- rep(seq_along(DataList_train_used), sapply(DataList_train_used, ncol))
+    blocks <- lapply(seq_along(DataList_train_used), function(i) which(blockIndices == i)) %>% `names<-`(paste0("block", seq_along(DataList_train_used)))
+    DataList_train_used <- do.call(cbind, DataList_train_used)
+    nTypes <- length(blocks)
+    pfList <- list(c(1,2,4), c(1,4,2), c(2,1,4), c(2,4,1), c(4,1,2), c(4,2,1))
+
+    ## training
+    ipf <- try({ suppressWarnings(
+          cvr2.ipflasso(Y = Surv(survTrain$time, survTrain$status), X = DataList_train_used, family = 'cox',
+                        standardize = F, blocks = blocks,
+                        pflist = pfList, nfolds = 4, ncv = 3, type.measure = 'deviance')
+    ) })
+
+    if (is(ipf, "try-error")) {
+      predTrain <- rep(NA, nrow(DataList_train$survival))
+      predVal <- rep(NA, nrow(DataList_val$survival))
+    }else {
+      predTrain <- ipflasso::ipflasso.predict(ipf, DataList_train_used)$linpredtest %>% as.numeric()
+      predTrain <- exp(predTrain)
+
+      DataList_val_used <- do.call(cbind, DataList_val_used)
+      predVal <- ipflasso::ipflasso.predict(ipf, DataList_val_used)$linpredtest %>% as.numeric()
+      predVal <- exp(predVal)
+    }
+    predTrain <- as.data.frame(cbind(predTrain, as.matrix(DataList_train$survival))) %>% `rownames<-`(rownames(DataList_train$survival))
+    predVal <- as.data.frame(cbind(predVal, as.matrix(DataList_val$survival))) %>% `rownames<-`(rownames(DataList_val$survival))
+
+    return(list(Train = predTrain, Val = predVal))
+  }
+
+  ### run the method
+  mclapply(allFiles, mc.cores = 10, function(file) {
+    print(file)
+
+    if (!dir.exists(file.path(resPath, "IPF-LASSO", file))) {
+      dir.create(file.path(resPath, "IPF-LASSO", file))
+    }
+
+    DataList <- readRDS(file.path(datPath, paste0(file, ".rds")))
+    dataTypes <- c("mRNATPM", "miRNA", "meth450", "cnv", "clinical", "survival")
+    dataTypesUsed <- c("mRNATPM", "cnv", "clinical", "survival")
+    DataList <- DataList[dataTypes]
+    commonSamples <- Reduce(intersect, lapply(DataList, rownames)) %>% unique()
+    DataList <- lapply(dataTypesUsed, function(dataType) {
+      dat <- DataList[[dataType]][commonSamples,]
+      if (!dataType %in% c("clinical", "survival")) {
+        dat[is.na(dat)] <- 0
+        if (max(dat) > 100) {
+          dat <- log2(dat + 1)
+        }
+      }
+      dat
+    }) %>% `names<-`(dataTypesUsed)
+
+    survival <- DataList$survival
+    nSamples <- nrow(survival)
+    aliveIndex <- which(survival$status == 0)
+    deadIndex <- which(survival$status == 1)
+
+    lapply(1:10, function(seed) {
+      print(seed)
+      set.seed(seed)
+      trainIndex <- c(sample(aliveIndex, size = floor(length(aliveIndex) * 0.8)), sample(deadIndex, size = floor(length(deadIndex) * 0.8)))
+      valIndex <- setdiff(seq_len(nSamples), trainIndex)
+
+      DataList_train <- lapply(DataList, function(x) x[trainIndex,])
+      DataList_val <- lapply(DataList, function(x) x[valIndex,])
+
+      Res <- train_predict(DataList_train, DataList_val)
+      write.table(Res$Train, file.path(resPath, "IPF-LASSO", file, paste0("Train_Res_", seed, ".csv")), col.names = T, sep = ",")
+      write.table(Res$Val, file.path(resPath, "IPF-LASSO", file, paste0("Val_Res_", seed, ".csv")), col.names = T, sep = ",")
+      return(NULL)
+    })
+    return(NULL)
+  })
+}
+
+
+
+
+

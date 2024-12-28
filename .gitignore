@@ -1,5 +1,9 @@
 # Byte-compiled / optimized / DLL files
 __pycache__/
+.training_logs/
+data/
+tensor_toolbox-master/
+
 *.py[cod]
 *$py.class
 
@@ -54,6 +58,7 @@ cover/
 # Translations
 *.mo
 *.pot
+*.pt
 
 # Django stuff:
 *.log
