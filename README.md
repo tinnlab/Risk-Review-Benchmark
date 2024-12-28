@@ -14,4 +14,4 @@ Please follow these steps to run reproduce the results:
    ```
    2. Open the link to the jupyter lab in a browser.
    3. Open the jupyter notebooks and run each method one by one
-4. After all the results are generated in the ```run-results``` folder. Run the ```result-generation.ipynb``` notebook to produce the metrics. 
+4. After all the results are generated in the ```run-results``` folder. Run the ```metrics-generate.ipynb``` notebook to produce the metrics. 
