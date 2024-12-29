@@ -1,17 +1,43 @@
-This is the repo to run the benchmark of risk prediction methods for the manuscript: A comprehensive review of cancer survival prediction using multi-omics integration and clinical variables.
-Please follow these steps to reproduce the results:
-1. Install anaconda or miniconda following [this instruction](https://docs.anaconda.com/miniconda/install/)
-2. Create the conda environments
-   To create all the required environments, open a terminal in the repo directory.
-   ```
-   chmod +x ./conda_envs_install.sh
-   ./conda_envs_install.sh
-   ```
-3. Using the seven jupyter notebooks to run the methods
-   1. Open a terminal in the repo directory, run the command:
-   ```
-   jupyter lab
-   ```
-   2. Open the link to the jupyter lab in a browser.
-   3. Open the jupyter notebooks and run each method one by one
-4. After all the results are generated in the ```run-results``` folder. Run the ```metrics-generate.ipynb``` notebook to produce the metrics. 
+
+# Reproducing Results for the Benchmark of Risk Prediction Methods
+
+This repository contains the code to reproduce the benchmark of risk prediction methods for the manuscript:
+
+**A Comprehensive Review of Cancer Survival Prediction Using Multi-Omics Integration and Clinical Variables**
+
+## Steps to Reproduce the Results
+
+### 1. Install Anaconda or Miniconda
+Follow the instructions to install either [Anaconda](https://www.anaconda.com/products/distribution) or [Miniconda](https://docs.conda.io/en/latest/miniconda.html) on your system.
+
+### 2. Create Conda Environments
+To create the necessary Conda environments, navigate to the repository directory in your terminal and run the following commands:
+
+```bash
+chmod +x ./conda_envs_install.sh
+./conda_envs_install.sh
+```
+This will set up all the required environments for running the notebooks and methods.
+
+### 3. Run the Methods Using Jupyter Notebooks
+In the terminal, navigate to the repository directory and run the following command to start Jupyter Lab:
+
+```bash
+jupyter lab
+```
+Once the command runs, it will provide a link to open Jupyter Lab in your browser.
+
+Inside Jupyter Lab, navigate to the notebooks and run each method one by one.
+
+### 4. Generate Metrics
+After running the notebooks, results will be stored in the run-results folder. To generate the performance metrics, open and run the metrics-generate.ipynb notebook.
+
+### Notes
+JupyterLab Installation: If JupyterLab is not installed by default in your Conda environment, you can install it with the following command:
+
+```bash
+conda install jupyterlab
+```
+Results: All generated results will be saved in the run-results folder. Review them after running the notebooks.
+
+
