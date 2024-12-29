@@ -1,5 +1,5 @@
 This is the repo to run the benchmark of risk prediction methods for the manuscript: A comprehensive review of cancer survival prediction using multi-omics integration and clinical variables.
-Please follow these steps to run reproduce the results:
+Please follow these steps to reproduce the results:
 1. Install anaconda or miniconda following [this instruction](https://docs.anaconda.com/miniconda/install/)
 2. Create the conda environments
    To create all the required environments, open a terminal in the repo directory.
