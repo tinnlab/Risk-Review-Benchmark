@@ -1,6 +1,4 @@
 
-# Reproducing Results for the Benchmark of Risk Prediction Methods
-
 This repository contains the code to reproduce the benchmark of risk prediction methods for the manuscript:
 
 **A Comprehensive Review of Cancer Survival Prediction Using Multi-Omics Integration and Clinical Variables**
