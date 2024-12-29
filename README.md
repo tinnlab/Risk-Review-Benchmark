@@ -25,7 +25,7 @@ jupyter lab
 ```
 Once the command runs, it will provide a link to open Jupyter Lab in your browser.
 
-Inside Jupyter Lab, navigate to the notebooks and run each method one by one.
+Inside Jupyter Lab, navigate to the notebooks and run each method one by one. 
 
 ### 4. Generate Metrics
 After running the notebooks, results will be stored in the run-results folder. To generate the performance metrics, open and run the ```metrics-generate.ipynb``` notebook.
@@ -36,6 +36,4 @@ JupyterLab Installation: If JupyterLab is not installed by default in your Conda
 ```bash
 conda install jupyterlab
 ```
-Results: All generated results will be saved in the run-results folder. Review them after running the notebooks.
-
 
