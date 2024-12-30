@@ -5,7 +5,9 @@
 # bash ~/miniconda3/miniconda.sh -b -u -p ~/miniconda3
 # rm ~/miniconda3/miniconda.sh
 
+# conda remove -n rp-review-env7 --all -y
 source ~/miniconda3/etc/profile.d/conda.sh
+
 
 # Create Conda environments
 # env1
@@ -39,20 +41,6 @@ pip install ipykernel
 python -m ipykernel install --user --name rp-review-env4 --display-name "rp-review-env4"
 conda deactivate
 
-# env5
-conda env create -f ./yml/rp-review-env5.yml
-conda activate rp-review-env5
-pip install ipykernel
-python -m ipykernel install --user --name rp-review-env5 --display-name "rp-review-env5"
-
-# Install bayesopt
-sudo apt install -y libboost-dev cmake cmake-curses-gui g++ octave liboctave-dev freeglut3-dev || true
-git clone https://github.com/rmcantin/bayesopt
-cd bayesopt
-cmake . && make && sudo make install
-cmake -DBAYESOPT_PYTHON_INTERFACE=ON . && make && sudo make install
-
-conda deactivate
 
 # env6
 conda env create -f ./yml/rp-review-env6.yml
@@ -69,3 +57,18 @@ python -m ipykernel install --user --name rp-review-env7 --display-name "rp-revi
 conda deactivate
 
 
+
+# env5
+conda env create -f ./yml/rp-review-env5.yml
+conda activate rp-review-env5
+pip install ipykernel
+python -m ipykernel install --user --name rp-review-env5 --display-name "rp-review-env5"
+
+# Install bayesopt
+sudo apt install -y libboost-dev cmake cmake-curses-gui g++ octave liboctave-dev freeglut3-dev || true
+git clone https://github.com/rmcantin/bayesopt
+cd bayesopt
+cmake . && make && sudo make install
+cmake -DBAYESOPT_PYTHON_INTERFACE=ON . && make && sudo make install
+
+conda deactivate

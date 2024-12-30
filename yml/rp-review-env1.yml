@@ -547,6 +547,7 @@ dependencies:
   - zstandard=0.22.0=py312hd58854c_0
   - zstd=1.5.5=hfc55251_0
   - pip:
+      - jupyterlab
       - absl-py==2.1.0
       - astunparse==1.6.3
       - autograd==1.6.2
