@@ -8,7 +8,7 @@ This repository contains the code to reproduce the benchmark of risk prediction 
 ### 1. Install Anaconda or Miniconda
 Follow the instructions to install either [Anaconda](https://www.anaconda.com/products/distribution) or [Miniconda](https://docs.conda.io/en/latest/miniconda.html) on your system.
 
-### 2. Create Conda Environments
+### 2. Create Conda Environments and Download The Data
 To create the necessary Conda environments, navigate to the repository directory in your terminal and run the following commands:
 
 ```bash
@@ -17,6 +17,12 @@ chmod +x ./conda_envs_install.sh
 ```
 This will set up all the required environments for running the notebooks and methods.
 
+To download all the processed data for the benchmark, navigate to the repository directory in your terminal and run the following commands:
+
+```bash
+chmod +x ./data_download.sh
+./data_download.sh
+```
 ### 3. Run the Methods Using Jupyter Notebooks
 In the terminal, navigate to the repository directory and run the following command to start Jupyter Lab:
 
