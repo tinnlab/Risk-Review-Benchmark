@@ -34,6 +34,6 @@ After running the notebooks, results will be stored in the run-results folder. T
 JupyterLab Installation: If JupyterLab is not installed by default in your Conda environment, you can install it with the following command:
 
 ```bash
-conda install jupyterlab
+conda install -c conda-forge jupyterlab
 ```
 
