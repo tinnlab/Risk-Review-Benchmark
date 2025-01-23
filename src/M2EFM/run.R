@@ -4,6 +4,11 @@ library(tidyverse)
 library(parallel)
 
 library(M2EFM)
+if (!require("rsample")) {
+  install.packages("rsample")
+}
+library(rsample)
+library(impute)
 
 RhpcBLASctl::blas_set_num_threads(1)
 RhpcBLASctl::omp_set_num_threads(1)
@@ -20,7 +25,7 @@ Sys.setenv(OMP_NUM_THREADS = 1,
 #   dir.create(file.path(resPath, "M2EFM"))
 # }
 
-run <- function(datPath, resPath) {
+run <- function(datPath, probePath, resPath, timerecPath) {
   # allFiles <- list.files(datPath)
   # allFiles <- strsplit(allFiles, ".rds") %>% do.call(what = c)
   allFiles <- c("TCGA-BLCA", "TCGA-BRCA", "TCGA-CESC", "TCGA-COAD", "TCGA-ESCA", "TCGA-HNSC",
@@ -31,6 +36,16 @@ run <- function(datPath, resPath) {
 
 
   ### some functions
+  impute_meth <- function(df, na_max_prop=.5) {
+    load_it("lumi")
+    df <- t(df)
+    # Filter probes more than half NAs
+    df <- df[rowMeans(is.na(df)) <= na_max_prop,]
+    #df = beta2m(df)
+    df <- data.frame(t(impute.knn(as.matrix(df), k=10, rng.seed=3301)$data))
+    return(df)
+  }
+
   train_predict <- function(DataList_train, DataList_val){
     exp <- as.data.frame(t(DataList_train$mRNATPM_map))
     meth <- as.data.frame(t(DataList_train$meth450))
@@ -87,11 +102,14 @@ run <- function(datPath, resPath) {
   }
 
   ### run the method
-  mclapply(allFiles, mc.cores = 10, function(file){
+  lapply(allFiles, function(file){
     print(file)
 
     if(!dir.exists(file.path(resPath, "M2EFM", file))){
       dir.create(file.path(resPath, "M2EFM", file))
+    }
+    if(!dir.exists(file.path(timerecPath, "M2EFM", file))){
+      dir.create(file.path(timerecPath, "M2EFM", file))
     }
 
     DataList <- readRDS(file.path(datPath, paste0(file, ".rds")))
@@ -102,7 +120,12 @@ run <- function(datPath, resPath) {
     DataList <- lapply(dataTypesUsed, function(dataType){
       dat <- DataList[[dataType]][commonSamples, ]
       if (!dataType %in% c("clinical", "survival")){
-        dat[is.na(dat)] <- 0
+        if (dataType == 'mRNATPM_map'){
+          dat[is.na(dat)] <- 0
+        }else{
+          dat <- dat[, setdiff(colnames(dat), Probes_remove)]
+          dat <- impute_meth(dat)
+        }
         if (max(dat) > 100) {
           dat <- log2(dat + 1)
         }
@@ -111,24 +134,48 @@ run <- function(datPath, resPath) {
     }) %>% `names<-` (dataTypesUsed)
 
     survival <- DataList$survival
-    nSamples <- nrow(survival)
-    aliveIndex <- which(survival$status == 0)
-    deadIndex <- which(survival$status == 1)
+    ### 5 times of 10 fold cross-validation
+    lapply(c(1:5), function(time){
+      print(paste0('Running Time: ', time))
+      if (!dir.exists(file.path(resPath, "M2EFM", file, paste0('Time', time)))) {
+        dir.create(file.path(resPath, "M2EFM", file, paste0('Time', time)))
+      }
+      if (!dir.exists(file.path(timerecPath, "M2EFM", file, paste0('Time', time)))) {
+        dir.create(file.path(timerecPath, "M2EFM", file, paste0('Time', time)))
+      }
+      set.seed(time)
+      all_folds <- vfold_cv(survival, v = 10, repeats = 1, strata = status)
+      all_folds <- lapply(1:10, function(fold) {
+        patientIDs <- rownames(survival)[all_folds$splits[[fold]]$in_id]
+      })
 
-    lapply(1:10, function(seed){
-      print(seed)
-      set.seed(seed)
-      trainIndex <- c(sample(aliveIndex, size = floor(length(aliveIndex) * 0.8)), sample(deadIndex, size = floor(length(deadIndex) * 0.8)))
-      valIndex <- setdiff(seq_len(nSamples), trainIndex)
+      mclapply(1:10, mc.cores = 5, function(fold) {
+        print(paste0('Running Fold: ', fold))
+        trainIndex <- all_folds[[fold]]
+        valIndex <- setdiff(rownames(survival), trainIndex)
 
-      DataList_train <- lapply(DataList, function(x) x[trainIndex, ])
-      DataList_val <- lapply(DataList, function(x) x[valIndex, ])
+        DataList_train <- lapply(DataList, function(x) x[trainIndex,])
+        DataList_val <- lapply(DataList, function(x) x[valIndex,])
 
-      Res <- train_predict(DataList_train, DataList_val)
-      write.table(Res$Train, file.path(resPath, "M2EFM", file, paste0("Train_Res_", seed, ".csv")), col.names = T, sep = ",")
-      write.table(Res$Val, file.path(resPath, "M2EFM", file, paste0("Val_Res_", seed, ".csv")), col.names = T, sep = ",")
-      return(NULL)
+        start_time <- Sys.time()
+        Res <- train_predict(DataList_train, DataList_val)
+        end_time <- Sys.time()
+        record_time <- as.numeric(difftime(end_time, start_time, units = "secs"))
+        print(paste0("running time: ", record_time))
+
+        time_df <- data.frame(
+          dataset = file,
+          time_point = time,
+          fold = fold,
+          runtime_seconds = record_time
+        )
+
+        write.csv(Res$Train, file.path(resPath, "M2EFM", file, paste0('Time', time), paste0("Train_Res_", fold, ".csv")), row.names = T)
+        write.csv(Res$Val, file.path(resPath, "M2EFM", file, paste0('Time', time), paste0("Val_Res_", fold, ".csv")), row.names = T)
+        write.csv(time_df, file.path(timerecPath, "M2EFM", file, paste0('Time', time), paste0("TimeRec_", fold, ".csv")), row.names = T)
+      })
     })
+    # write.csv(alltimes, file.path(timerecPath, "M2EFM", file, "TimeRec.csv"), row.names=T)
     return(NULL)
   })
 }

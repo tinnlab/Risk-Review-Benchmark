@@ -18,7 +18,7 @@ Sys.setenv(OMP_NUM_THREADS = 1,
 #   dir.create(file.path(resPath, "IPF-LASSO"))
 # }
 
-run <- function(datPath, resPath) {
+run <- function(datPath, resPath, timerecPath) {
   # allFiles <- list.files(datPath)
   # allFiles <- strsplit(allFiles, ".rds") %>% do.call(what = c)
   allFiles <- c("TCGA-BLCA", "TCGA-BRCA", "TCGA-CESC", "TCGA-COAD", "TCGA-ESCA", "TCGA-HNSC",
@@ -93,7 +93,7 @@ run <- function(datPath, resPath) {
     ipf <- try({ suppressWarnings(
           cvr2.ipflasso(Y = Surv(survTrain$time, survTrain$status), X = DataList_train_used, family = 'cox',
                         standardize = F, blocks = blocks,
-                        pflist = pfList, nfolds = 4, ncv = 3, type.measure = 'deviance')
+                        pflist = pfList, nfolds = 5, ncv = 10, type.measure = 'deviance')
     ) })
 
     if (is(ipf, "try-error")) {
@@ -114,11 +114,15 @@ run <- function(datPath, resPath) {
   }
 
   ### run the method
-  mclapply(allFiles, mc.cores = 10, function(file) {
+  lapply(allFiles, function(file) {
     print(file)
 
     if (!dir.exists(file.path(resPath, "IPF-LASSO", file))) {
       dir.create(file.path(resPath, "IPF-LASSO", file))
+    }
+
+    if (!dir.exists(file.path(timerecPath, "IPF-LASSO", file))) {
+      dir.create(file.path(timerecPath, "IPF-LASSO", file))
     }
 
     DataList <- readRDS(file.path(datPath, paste0(file, ".rds")))
@@ -138,23 +142,46 @@ run <- function(datPath, resPath) {
     }) %>% `names<-`(dataTypesUsed)
 
     survival <- DataList$survival
-    nSamples <- nrow(survival)
-    aliveIndex <- which(survival$status == 0)
-    deadIndex <- which(survival$status == 1)
 
-    lapply(1:10, function(seed) {
-      print(seed)
-      set.seed(seed)
-      trainIndex <- c(sample(aliveIndex, size = floor(length(aliveIndex) * 0.8)), sample(deadIndex, size = floor(length(deadIndex) * 0.8)))
-      valIndex <- setdiff(seq_len(nSamples), trainIndex)
+    ### 5 times of 10 fold cross-validation
+    lapply(c(1:5), function(time){
+      print(paste0('Running Time: ', time))
+      if (!dir.exists(file.path(resPath, "IPF-LASSO", file, paste0('Time', time)))) {
+        dir.create(file.path(resPath, "IPF-LASSO", file, paste0('Time', time)))
+      }
+      if (!dir.exists(file.path(timerecPath, "IPF-LASSO", file, paste0('Time', time)))) {
+        dir.create(file.path(timerecPath, "IPF-LASSO", file, paste0('Time', time)))
+      }
+      set.seed(time)
+      all_folds <- vfold_cv(survival, v = 10, repeats = 1, strata = status)
+      all_folds <- lapply(1:10, function(fold) {
+        patientIDs <- rownames(survival)[all_folds$splits[[fold]]$in_id]
+      })
 
-      DataList_train <- lapply(DataList, function(x) x[trainIndex,])
-      DataList_val <- lapply(DataList, function(x) x[valIndex,])
+      mclapply(1:10, mc.cores = 5, function(fold) {
+        print(paste0('Running Fold: ', fold))
+        trainIndex <- all_folds[[fold]]
+        valIndex <- setdiff(rownames(survival), trainIndex)
 
-      Res <- train_predict(DataList_train, DataList_val)
-      write.table(Res$Train, file.path(resPath, "IPF-LASSO", file, paste0("Train_Res_", seed, ".csv")), col.names = T, sep = ",")
-      write.table(Res$Val, file.path(resPath, "IPF-LASSO", file, paste0("Val_Res_", seed, ".csv")), col.names = T, sep = ",")
-      return(NULL)
+        DataList_train <- lapply(DataList, function(x) x[trainIndex,])
+        DataList_val <- lapply(DataList, function(x) x[valIndex,])
+
+        start_time <- Sys.time()
+        Res <- train_predict(DataList_train, DataList_val)
+        end_time <- Sys.time()
+        record_time <- as.numeric(difftime(end_time, start_time, units = "secs"))
+
+        time_df <- data.frame(
+          dataset = file,
+          time_point = time,
+          fold = fold,
+          runtime_seconds = record_time
+        )
+
+        write.csv(Res$Train, file.path(resPath, "IPF-LASSO", file, paste0('Time', time), paste0("Train_Res_", fold, ".csv")), row.names = T)
+        write.csv(Res$Val, file.path(resPath, "IPF-LASSO", file, paste0('Time', time), paste0("Val_Res_", fold, ".csv")), row.names = T)
+        write.csv(time_df, file.path(timerecPath, "IPF-LASSO", file, paste0('Time', time), paste0("TimeRec_", fold, ".csv")), row.names = T)
+      })
     })
     return(NULL)
   })

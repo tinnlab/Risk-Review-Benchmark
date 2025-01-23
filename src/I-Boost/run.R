@@ -1,6 +1,8 @@
 # Installing IBoost
 library(devtools)
-install_github("alexwky/I-Boost")
+if (!require("IBoost")) {
+  install_github("alexwky/I-Boost")
+}
 
 library(tidyverse)
 library(parallel)
@@ -23,7 +25,7 @@ Sys.setenv(OMP_NUM_THREADS = 1,
 #   dir.create(file.path(resPath, "I-Boost"))
 # }
 
-run <- function(datPath, resPath) {
+run <- function(datPath, resPath, timerecPath) {
   # allFiles <- list.files(datPath)
   # allFiles <- strsplit(allFiles, ".rds") %>% do.call(what = c)
   allFiles <- c("TCGA-BLCA", "TCGA-BRCA", "TCGA-CESC", "TCGA-COAD", "TCGA-ESCA", "TCGA-HNSC",
@@ -103,7 +105,7 @@ run <- function(datPath, resPath) {
 
     ## training
     train_label <- Surv(survTrain$time, survTrain$status)
-    ib <- IBoost(X = DataList_train_used, Y = train_label, data.type = blocks, iter.max = 10)
+    ib <- IBoost(X = DataList_train_used, Y = train_label, data.type = blocks, iter.max = 200)
 
     if (is(ib, "try-error")) {
       predTrain <- rep(NA, nrow(DataList_train$survival))
@@ -123,19 +125,19 @@ run <- function(datPath, resPath) {
   }
 
   ### run the method
-  mclapply(allFiles, mc.cores = 10, function(file) {
+  lapply(allFiles, function(file) {
     print(file)
 
     if (!dir.exists(file.path(resPath, "I-Boost", file))) {
       dir.create(file.path(resPath, "I-Boost", file))
     }
+    if (!dir.exists(file.path(timerecPath, "I-Boost", file))) {
+      dir.create(file.path(timerecPath, "I-Boost", file))
+    }
 
     DataList <- readRDS(file.path(datPath, paste0(file, ".rds")))
-    dataTypes <- c("mRNATPM", "miRNA", "cnv", "meth450", "clinical", "survival")
+    dataTypes <- c("mRNATPM", "miRNA", "meth450", "cnv", "clinical", "survival")
     dataTypesUsed <- c("mRNATPM", "miRNA", "cnv", "clinical", "survival")
-    if (file == "TCGA-GBM"){
-      dataTypes <- c("mRNATPM", "cnv", "clinical", "survival")
-    }
     DataList <- DataList[dataTypes]
     commonSamples <- Reduce(intersect, lapply(DataList, rownames)) %>% unique()
     DataList <- lapply(dataTypesUsed, function(dataType) {
@@ -150,28 +152,51 @@ run <- function(datPath, resPath) {
     }) %>% `names<-`(dataTypesUsed)
 
     survival <- DataList$survival
-    nSamples <- nrow(survival)
-    aliveIndex <- which(survival$status == 0)
-    deadIndex <- which(survival$status == 1)
 
-    lapply(1:10, function(seed) {
-      print(seed)
-      set.seed(seed)
-      trainIndex <- c(sample(aliveIndex, size = floor(length(aliveIndex) * 0.8)), sample(deadIndex, size = floor(length(deadIndex) * 0.8)))
-      valIndex <- setdiff(seq_len(nSamples), trainIndex)
+    ### 5 times of 10 fold cross-validation
+    lapply(c(1:5), function(time) {
+      print(paste0('Running Time: ', time))
 
-      DataList_train <- lapply(DataList, function(x) x[trainIndex,])
-      DataList_val <- lapply(DataList, function(x) x[valIndex,])
+      if (!dir.exists(file.path(resPath, "I-Boost", file, paste0('Time', time)))) {
+        dir.create(file.path(resPath, "I-Boost", file, paste0('Time', time)))
+      }
+      if (!dir.exists(file.path(timerecPath, "I-Boost", file, paste0('Time', time)))) {
+        dir.create(file.path(timerecPath, "I-Boost", file, paste0('Time', time)))
+      }
 
-      Res <- train_predict(DataList_train, DataList_val)
-      write.table(Res$Train, file.path(resPath, "I-Boost", file, paste0("Train_Res_", seed, ".csv")), col.names = T, sep = ",")
-      write.table(Res$Val, file.path(resPath, "I-Boost", file, paste0("Val_Res_", seed, ".csv")), col.names = T, sep = ",")
-      return(NULL)
+      set.seed(time)
+      all_folds <- vfold_cv(survival, v = 10, repeats = 1, strata = status)
+      all_folds <- lapply(1:10, function(fold) {
+        patientIDs <- rownames(survival)[all_folds$splits[[fold]]$in_id]
+      })
+
+      mclapply(1:10, mc.cores=5, function(fold) {
+        print(paste0('Running Fold: ', fold))
+        trainIndex <- all_folds[[fold]]
+        valIndex <- setdiff(rownames(survival), trainIndex)
+
+        DataList_train <- lapply(DataList, function(x) x[trainIndex,])
+        DataList_val <- lapply(DataList, function(x) x[valIndex,])
+
+        start_time <- Sys.time()
+        Res <- train_predict(DataList_train, DataList_val)
+        end_time <- Sys.time()
+        record_time <- as.numeric(difftime(end_time, start_time, units = "secs"))
+        print(paste0("running time: ", record_time))
+
+        time_df <- data.frame(
+          dataset = file,
+          time_point = time,
+          fold = fold,
+          runtime_seconds = record_time
+        )
+
+        write.csv(Res$Train, file.path(resPath, "I-Boost", file, paste0('Time', time), paste0("Train_Res_", fold, ".csv")), row.names = T)
+        write.csv(Res$Val, file.path(resPath, "I-Boost", file, paste0('Time', time), paste0("Val_Res_", fold, ".csv")), row.names = T)
+        write.csv(time_df, file.path(timerecPath, "I-Boost", file, paste0('Time', time), paste0("TimeRec_", fold, ".csv")), row.names = T)
+      })
     })
+    # write.csv(alltimes, file.path(timerecPath, "I-Boost", file, "TimeRec.csv"), row.names = T)
     return(NULL)
   })
-
-  # tss <- read.table(file.path(resPath, "I-Boost", file, paste0("Train_Res_", seed, ".csv")), sep = ",", header=1)
-  # tss <- read.table(file.path(resPath, "I-Boost", file, paste0("Val_Res_", seed, ".csv")), sep = ",", header=1)
-
 }

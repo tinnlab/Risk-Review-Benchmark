@@ -1,13 +1,19 @@
 # Installing Tensorflow
-remotes::install_github("rstudio/tensorflow", upgrade = 'never')
+if (!require("tensorflow")) {
+  remotes::install_github("rstudio/tensorflow", upgrade = 'never')
+}
 # library(tensorflow)
 # install_tensorflow(method = 'conda', envname = 'rp-review-env1')
 # # Installing keras
-install.packages("keras", repos='http://cran.us.r-project.org', dependencies=TRUE)
+if (!require("keras")) {
+  install.packages("keras", repos='http://cran.us.r-project.org', dependencies=TRUE)
+}
 # library(keras)
 # install_keras()
 # install compound.Cox
-install.packages('compound.Cox', repos='http://cran.us.r-project.org', dependencies=TRUE)
+if (!require("compound.Cox")) {
+  install.packages('compound.Cox', repos='http://cran.us.r-project.org', dependencies=TRUE)
+}
 
 
 library(tidyverse)
@@ -18,7 +24,7 @@ library(matrixStats)
 library(glmnet)
 library(keras)
 library(tensorflow)
-use_condaenv('/home/dungp/miniconda3/envs/rp-review-env4')
+use_condaenv('~/miniconda3/envs/rp-review-env4')
 
 RhpcBLASctl::blas_set_num_threads(1)
 RhpcBLASctl::omp_set_num_threads(1)
@@ -38,7 +44,7 @@ Sys.setenv(OMP_NUM_THREADS = 1,
 # IslandProbes <- readRDS("/nfs/blanche/share/daotran/SurvivalPrediction/AllData/Meth_Island_Probe.rds")$ProbeIds
 # LncRNAList <- readRDS("/nfs/blanche/share/daotran/SurvivalPrediction/AllData/LncRNAs.rds")$LNCS
 
-run <- function(datPath, resPath, IslandProbes, LncRNAList) {
+run <- function(datPath, resPath, timerecPath, IslandProbes, LncRNAList) {
   allFiles <- c("TCGA-BLCA", "TCGA-BRCA", "TCGA-CESC", "TCGA-COAD", "TCGA-ESCA", "TCGA-HNSC",
                 "TCGA-KIRC", "TCGA-KIRP", "TCGA-LAML", "TCGA-LGG", "TCGA-LIHC", "TCGA-LUAD",
                 "TCGA-LUSC", "TCGA-PAAD", "TCGA-SARC", "TCGA-STAD", "TCGA-UCEC")
@@ -237,6 +243,9 @@ run <- function(datPath, resPath, IslandProbes, LncRNAList) {
     if (!dir.exists(file.path(resPath, "Multimodal_NSCLC", file))) {
       dir.create(file.path(resPath, "Multimodal_NSCLC", file))
     }
+    if (!dir.exists(file.path(timerecPath, "Multimodal_NSCLC", file))) {
+      dir.create(file.path(timerecPath, "Multimodal_NSCLC", file))
+    }
 
     DataList <- readRDS(file.path(datPath, paste0(file, ".rds")))
     dataTypes <- c("mRNATPM", "miRNA", "cnv", "meth450", "clinical", "survival")
@@ -278,25 +287,58 @@ run <- function(datPath, resPath, IslandProbes, LncRNAList) {
     }) %>% `names<-`(dataTypesUsed)
 
     survival <- DataList$survival
-    nSamples <- nrow(survival)
-    aliveIndex <- which(survival$status == 0)
-    deadIndex <- which(survival$status == 1)
 
-    lapply(1:10, function(seed) {
-      k_clear_session()
-      print(seed)
-      set.seed(seed)
-      trainIndex <- c(sample(aliveIndex, size = floor(length(aliveIndex) * 0.8)), sample(deadIndex, size = floor(length(deadIndex) * 0.8)))
-      valIndex <- setdiff(seq_len(nSamples), trainIndex)
+    ### 5 times of 10 fold cross-validation
+    lapply(c(1:5), function(time){
+      # if (time != 3){
+      #   return(NULL)
+      # }
+      print(paste0('Running Time: ', time))
 
-      DataList_train <- lapply(DataList, function(x) x[trainIndex,])
-      DataList_val <- lapply(DataList, function(x) x[valIndex,])
+      if (!dir.exists(file.path(resPath, "Multimodal_NSCLC", file, paste0('Time', time)))) {
+        dir.create(file.path(resPath, "Multimodal_NSCLC", file, paste0('Time', time)))
+      }
+      if (!dir.exists(file.path(timerecPath, "Multimodal_NSCLC", file, paste0('Time', time)))) {
+        dir.create(file.path(timerecPath, "Multimodal_NSCLC", file, paste0('Time', time)))
+      }
 
-      Res <- train_predict(DataList_train, DataList_val)
-      write.table(Res$Train, file.path(resPath, "Multimodal_NSCLC", file, paste0("Train_Res_", seed, ".csv")), col.names = T, sep = ",")
-      write.table(Res$Val, file.path(resPath, "Multimodal_NSCLC", file, paste0("Val_Res_", seed, ".csv")), col.names = T, sep = ",")
-      return(NULL)
+      set.seed(time)
+      all_folds <- vfold_cv(survival, v = 10, repeats = 1, strata = status)
+      all_folds <- lapply(1:10, function(fold) {
+        patientIDs <- rownames(survival)[all_folds$splits[[fold]]$in_id]
+      })
+
+      lapply(1:10, function(fold) {
+        # if (fold != 10){
+        #   return(NULL)
+        # }
+        k_clear_session()
+        print(paste0('Running Fold: ', fold))
+        trainIndex <- all_folds[[fold]]
+        valIndex <- setdiff(rownames(survival), trainIndex)
+
+        DataList_train <- lapply(DataList, function(x) x[trainIndex,])
+        DataList_val <- lapply(DataList, function(x) x[valIndex,])
+
+        start_time <- Sys.time()
+        Res <- train_predict(DataList_train, DataList_val)
+        end_time <- Sys.time()
+        record_time <- as.numeric(difftime(end_time, start_time, units = "secs"))
+        print(paste0("running time: ", record_time))
+
+        time_df <- data.frame(
+          dataset = file,
+          time_point = time,
+          fold = fold,
+          runtime_seconds = record_time
+        )
+
+        write.csv(Res$Train, file.path(resPath, "Multimodal_NSCLC", file, paste0('Time', time), paste0("Train_Res_", fold, ".csv")), row.names = T)
+        write.csv(Res$Val, file.path(resPath, "Multimodal_NSCLC", file, paste0('Time', time), paste0("Val_Res_", fold, ".csv")), row.names = T)
+        write.csv(time_df, file.path(timerecPath, "Multimodal_NSCLC", file, paste0('Time', time), paste0("TimeRec_", fold, ".csv")), row.names = T)
+      })
     })
+    # write.csv(alltimes, file.path(timerecPath, "Multimodal_NSCLC", file, "TimeRec.csv"), row.names=T)
     return(NULL)
   })
 }
