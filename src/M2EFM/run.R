@@ -25,7 +25,7 @@ Sys.setenv(OMP_NUM_THREADS = 1,
 #   dir.create(file.path(resPath, "M2EFM"))
 # }
 
-run <- function(datPath, probePath, resPath, timerecPath) {
+run <- function(datPath, Probes_remove, resPath, timerecPath) {
   # allFiles <- list.files(datPath)
   # allFiles <- strsplit(allFiles, ".rds") %>% do.call(what = c)
   allFiles <- c("TCGA-BLCA", "TCGA-BRCA", "TCGA-CESC", "TCGA-COAD", "TCGA-ESCA", "TCGA-HNSC",
