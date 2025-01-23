@@ -41,23 +41,6 @@ pip install ipykernel
 python -m ipykernel install --user --name rp-review-env4 --display-name "rp-review-env4"
 conda deactivate
 
-
-# env6
-conda env create -f ./yml/rp-review-env6.yml
-conda activate rp-review-env6
-pip install ipykernel
-python -m ipykernel install --user --name rp-review-env6 --display-name "rp-review-env6"
-conda deactivate
-
-# env7
-conda env create -f ./yml/rp-review-env7.yml
-conda activate rp-review-env7
-pip install ipykernel
-python -m ipykernel install --user --name rp-review-env7 --display-name "rp-review-env7"
-conda deactivate
-
-
-
 # env5
 conda env create -f ./yml/rp-review-env5.yml
 conda activate rp-review-env5
