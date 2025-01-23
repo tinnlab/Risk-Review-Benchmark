@@ -183,7 +183,7 @@ run <- function(datPath, resPath, timerecPath) {
         patientIDs <- rownames(survival)[all_folds$splits[[fold]]$in_id]
       })
 
-      mclapply(1:10, mc.cores=5, function(fold) {
+      mclapply(1:10, mc.cores=2, function(fold) {
         print(paste0('Running Fold: ', fold))
         trainIndex <- all_folds[[fold]]
         valIndex <- setdiff(rownames(survival), trainIndex)

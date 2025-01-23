@@ -1,9 +1,10 @@
 # Installing M2EFM
-remotes::install_github("jeffreyat/M2EFM")
+if (!require("M2EFM")) {
+  remotes::install_github("jeffreyat/M2EFM")
+}
+library(M2EFM)
 library(tidyverse)
 library(parallel)
-
-library(M2EFM)
 if (!require("rsample")) {
   install.packages("rsample")
 }
@@ -149,7 +150,7 @@ run <- function(datPath, Probes_remove, resPath, timerecPath) {
         patientIDs <- rownames(survival)[all_folds$splits[[fold]]$in_id]
       })
 
-      mclapply(1:10, mc.cores = 5, function(fold) {
+      mclapply(1:10, mc.cores = 2, function(fold) {
         print(paste0('Running Fold: ', fold))
         trainIndex <- all_folds[[fold]]
         valIndex <- setdiff(rownames(survival), trainIndex)
