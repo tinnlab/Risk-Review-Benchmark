@@ -1,10 +1,10 @@
 import sys
 sys.path.append("./")
-# sys.path.append("/data/daotran/Cancer_RP/Benchmark/ReviewPaper_MethodRun/CSAE")
 
 import os
+import time
 from functools import reduce
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import StratifiedKFold
 from utils import *
 
 os.environ["OMP_NUM_THREADS"] = "1"
@@ -16,23 +16,24 @@ os.environ["NUMEXPR_NUM_THREADS"] = "1"
 datPath = '/nfs/blanche/share/daotran/SurvivalPrediction/AllData/ReviewPaper_Data'
 resPath = '/data/dungp/projects_catalina/risk-review/benchmark/run-results'
 
-if os.path.exists(resPath + "/CSAE") == False:
-    os.makedirs(resPath + "/CSAE")
-
-all_folds = ["TCGA-BLCA", "TCGA-BRCA", "TCGA-CESC", "TCGA-COAD", "TCGA-ESCA",
+alldatasets = ["TCGA-BLCA", "TCGA-BRCA", "TCGA-CESC", "TCGA-COAD", "TCGA-ESCA",
     "TCGA-HNSC", "TCGA-KIRC", "TCGA-KIRP", "TCGA-LAML", "TCGA-LGG",
     "TCGA-LIHC", "TCGA-LUAD", "TCGA-LUSC", "TCGA-PAAD", "TCGA-SARC",
     "TCGA-STAD", "TCGA-UCEC"]
 
-for fold in all_folds:
-    print(fold)
-    if os.path.exists(resPath + "/CSAE/" + fold) == False:
-        os.makedirs(resPath + "/CSAE/" + fold)
+
+for dataset in alldatasets:
+    print(dataset)
+    
+    if os.path.exists(resPath + "/CSAE/" + dataset) == False:
+        os.makedirs(resPath + "/CSAE/" + dataset)
+    if os.path.exists(timerecPath + "/CSAE/" + dataset) == False:
+        os.makedirs(timerecPath + "/CSAE/" + dataset)
 
     dataTypes = ["mRNATPM", "cnv", "miRNA", "meth450", "clinical", "survival"]
     dataList = {}
     for dataType in dataTypes:
-        df = pd.read_csv(datPath + "/" + fold + "/" + dataType + ".csv")
+        df = pd.read_csv(datPath + "/" + dataset + "/" + dataType + ".csv", header=0, index_col=0)
         dataList[dataType] = df
 
     common_rows = reduce(
@@ -44,50 +45,76 @@ for fold in all_folds:
     common_dataList = {name: df.loc[common_rows] for name, df in dataList.items()}
     common_dataList = impute_df(common_dataList)
 
-    ### split data in to train and test set
     survival_df = common_dataList['survival']
-    alive_patients = survival_df[survival_df['status'] == 0].index.tolist()
-    dead_patients = survival_df[survival_df['status'] == 1].index.tolist()
 
-    for seed in range(1, 11):
-        print ("****** seed " + str(seed) + " ******")
-        alive_train, alive_test = train_test_split(alive_patients, test_size=0.2, random_state=seed)
-        dead_train, dead_test = train_test_split(dead_patients,test_size=0.2, random_state=seed)
-        train_patients = alive_train + dead_train
-        test_patients = alive_test + dead_test
+    # all_times = {}
+    for current_time in range(1, 6):
+        # if current_time != 3:
+        #     continue
+        print(f'Running Time: {current_time}')
+    
+        if os.path.exists(os.path.join(resPath, "CSAE", dataset, 'Time' + str(current_time))) == False:
+            os.makedirs(os.path.join(resPath, "CSAE", dataset, 'Time' + str(current_time)))
+        if os.path.exists(os.path.join(timerecPath, "CSAE", dataset, 'Time' + str(current_time))) == False:
+            os.makedirs(os.path.join(timerecPath, "CSAE", dataset, 'Time' + str(current_time)))
 
-        train_dataframes = {name: df.loc[train_patients]
-            for name, df in common_dataList.items()}
+        skf = StratifiedKFold(n_splits=10, shuffle=True, random_state=current_time)
+        # fold_times = []
+        for fold, (train_idx, val_idx) in enumerate(
+                skf.split(np.zeros(len(survival_df['status'])), survival_df['status']), 1):
+            # if fold != 1:
+            #     continue
+            print(f'Running Fold: {fold}')
+            train_dataframes = {name: df.iloc[train_idx]
+                                for name, df in common_dataList.items()}
 
-        test_dataframes = {name: df.loc[test_patients]
-            for name, df in common_dataList.items()}
+            test_dataframes = {name: df.iloc[val_idx]
+                               for name, df in common_dataList.items()}
 
-        survTrain = train_dataframes['survival']
-        survTest = test_dataframes['survival']
+            survTrain = train_dataframes['survival']
+            survTest = test_dataframes['survival']
 
-        del train_dataframes['survival']
-        del test_dataframes['survival']
+            del train_dataframes['survival']
+            del test_dataframes['survival']
 
-        try:
-            mod = train(train_dataframes, survTrain)
-        except:
-            mod = "An exception occurred"
-            predTrain = pd.DataFrame({'predTrain': np.full(survTrain.shape[0], np.nan)})
-            predVal = pd.DataFrame({'predVal': np.full(survTest.shape[0], np.nan)})
+            start_time = time.time()
 
-        if type(mod) != str:
-            predTrain = predict(mod, train_dataframes)
-            predVal = predict(mod, test_dataframes)
+            try:
+                mod = train(train_dataframes, survTrain)
+            except:
+                mod = "An exception occurred"
+                predTrain = pd.DataFrame({'predTrain': np.full(survTrain.shape[0], np.nan)})
+                predVal = pd.DataFrame({'predVal': np.full(survTest.shape[0], np.nan)})
 
-            predTrain.index = survTrain.index
-            predTrain.columns = ['predTrain']
-            predVal.index = survTest.index
-            predVal.columns = ['predVal']
+            if type(mod) != str:
+                predTrain = predict(mod, train_dataframes)
+                predVal = predict(mod, test_dataframes)
 
-        predTrain = pd.concat([predTrain, survTrain[['time', 'status']]], axis=1)
-        predVal = pd.concat([predVal, survTest[['time', 'status']]], axis=1)
+                predTrain.index = survTrain.index
+                predTrain.columns = ['predTrain']
+                predVal.index = survTest.index
+                predVal.columns = ['predVal']
 
-        predTrain.to_csv(resPath + "/CSAE" + '/' + fold + '/Train_Res_' + str(seed) + '.csv', sep=',',
-                         header=True)
-        predVal.to_csv(resPath + "/CSAE" + '/' + fold + '/Val_Res_' + str(seed) + '.csv', sep=',',
-                       header=True)
+            end_time = time.time()
+            record_time = end_time - start_time
+            # fold_times.append(record_time)
+            print(f'Running Time: {record_time:.2f} seconds')
+
+            time_df = pd.DataFrame({
+                'dataset': [dataset],
+                'time_point': [current_time],
+                'fold': [fold],
+                'runtime_seconds': [record_time]
+            })
+
+            predTrain = pd.concat([predTrain, survTrain[['time', 'status']]], axis=1)
+            predVal = pd.concat([predVal, survTest[['time', 'status']]], axis=1)
+
+            predTrain.to_csv(resPath + "/CSAE" + '/' + dataset + '/Time' + str(current_time) + '/Train_Res_' + str(fold) + '.csv', sep=',',
+                             header=True)
+            predVal.to_csv(resPath + "/CSAE" + '/' + dataset + '/Time' + str(current_time) + '/Val_Res_' + str(fold) + '.csv', sep=',',
+                           header=True)
+            time_df.to_csv(
+                timerecPath + "/CSAE" + '/' + dataset + '/Time' + str(current_time) + '/TimeRec_' + str(
+                    fold) + '.csv',
+                sep=',', header=True)
