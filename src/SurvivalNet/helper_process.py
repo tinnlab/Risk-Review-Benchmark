@@ -45,10 +45,10 @@ def impute_df(dataframes):
         if name == 'survival' or name == 'clinical':
             continue
 
-        variances = df.var(skipna=True)  # Calculate variance of each column
-        top_indices = variances.nlargest(
-            min(500, df.shape[1])).index  # Get indices of top 500 variances
-        df = df[top_indices]
+        # variances = df.var(skipna=True)  # Calculate variance of each column
+        # top_indices = variances.nlargest(
+        #     min(50, df.shape[1])).index  # Get indices of top 50 variances
+        # df = df[top_indices]
 
         if df.isnull().any().any():
             df = df.dropna(axis=1, how='all')  ## drop columns with all na values
@@ -62,31 +62,51 @@ def impute_df(dataframes):
     return processed_dataframes
 
 
-## split patients into train, val and test sets
-def train_val_test_split(alive_list, dead_list, random_seed, test_size=0.2, val_size=0.2):
+def manual_kfold_split(y, n_splits=10, random_seed=1234):
+    y = np.array(y)
+    alive_indices = np.where(y == 1)[0]
+    dead_indices = np.where(y == 0)[0]
+
+    np.random.seed(random_seed)
+    np.random.shuffle(alive_indices)
+    np.random.shuffle(dead_indices)
+
+    n_alive_per_fold = len(alive_indices) // n_splits
+    n_dead_per_fold = len(dead_indices) // n_splits
+
+    fold_indices = []
+
+    for i in range(n_splits):
+        if i < n_splits - 1:
+            val_alive = alive_indices[i * n_alive_per_fold: (i + 1) * n_alive_per_fold]
+            val_dead = dead_indices[i * n_dead_per_fold: (i + 1) * n_dead_per_fold]
+        else:
+            val_alive = alive_indices[i * n_alive_per_fold:]
+            val_dead = dead_indices[i * n_dead_per_fold:]
+
+        val_indices = np.concatenate([val_alive, val_dead])
+        train_indices = np.array([idx for idx in range(len(y)) if idx not in val_indices])
+        fold_indices.append((train_indices, val_indices))
+
+    return fold_indices
+
+
+## split patients into train, and val sets
+def train_val_split(alive_list, dead_list, random_seed, val_size=0.2):
     random.seed(random_seed)
-    n_alive_test = int(len(alive_list) * test_size)
     n_alive_val = int(len(alive_list) * val_size)
-    n_dead_test = int(len(dead_list) * test_size)
     n_dead_val = int(len(dead_list) * val_size)
 
-    alive_test_indices = set(random.sample(range(len(alive_list)), n_alive_test))
-    dead_test_indices = set(random.sample(range(len(dead_list)), n_dead_test))
+    alive_val_indices = set(random.sample(range(len(alive_list)), n_alive_val))
+    dead_val_indices = set(random.sample(range(len(dead_list)), n_dead_val))
 
-    remaining_alive_indices = list(set(range(len(alive_list))) - alive_test_indices)
-    remaining_dead_indices = list(set(range(len(dead_list))) - dead_test_indices)
-    alive_val_indices = set(random.sample(remaining_alive_indices, n_alive_val))
-    dead_val_indices = set(random.sample(remaining_dead_indices, n_dead_val))
-
-    alive_train = [x for i, x in enumerate(alive_list) if i not in alive_test_indices and i not in alive_val_indices]
+    alive_train = [x for i, x in enumerate(alive_list) if i not in alive_val_indices]
     alive_val = [alive_list[i] for i in alive_val_indices]
-    alive_test = [alive_list[i] for i in alive_test_indices]
 
-    dead_train = [x for i, x in enumerate(dead_list) if i not in dead_test_indices and i not in dead_val_indices]
+    dead_train = [x for i, x in enumerate(dead_list) if i not in dead_val_indices]
     dead_val = [dead_list[i] for i in dead_val_indices]
-    dead_test = [dead_list[i] for i in dead_test_indices]
 
-    return alive_train, alive_val, alive_test, dead_train, dead_val, dead_test
+    return alive_train, alive_val, dead_train, dead_val
 
 
 ## process train data
@@ -189,10 +209,10 @@ def transform_df_pred(dataframes):
 
 
 ## function
-def fit(pretrain_set,  train_set, val_set, epochs=40, pretrain_config=None, opt='GDLS', do_bayes_opt=True):
+def fit(pretrain_set, dataset, current_time, fold, train_set, val_set, epochs=40, pretrain_config=None, opt='GDLS', do_bayes_opt=True):
     if do_bayes_opt == True:
         print '***Model Selection with BayesOpt***'
-        _, bo_params = BayesOpt.tune()
+        _, bo_params = BayesOpt.tune(dataset, current_time, fold)
         n_layers = int(bo_params[0])
         n_hidden = int(bo_params[1])
         do_rate = bo_params[2]

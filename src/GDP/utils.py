@@ -10,23 +10,28 @@ import os
 
 
 ## intersect genes among omics, select 10000 genes with highest var
-def gene_filter(dataframes):
-    mRNA_genes = set(dataframes['mRNATPM_map'].columns)
-    cnv_genes = set(dataframes['cnv_map'].columns)
-    overlapping_genes = list(mRNA_genes.intersection(cnv_genes))
-
-    mRNA_var = dataframes['mRNATPM_map'][overlapping_genes].std()
-    cnv_var = dataframes['cnv_map'][overlapping_genes].std()
-
-    top_mRNA_genes = mRNA_var.nlargest(min(10000, len(mRNA_var))).index.tolist() ## change later
-    top_cnv_genes = cnv_var.nlargest(min(10000, len(cnv_var))).index.tolist()
-    top_genes = list(set(top_mRNA_genes) & set(top_cnv_genes))
-    # all_genes = list(overlapping_genes)
-    return overlapping_genes, top_genes
+# def gene_filter(dataframes):
+#     mRNA_genes = set(dataframes['mRNATPM_map'].columns)
+#     cnv_genes = set(dataframes['cnv_map'].columns)
+#     overlapping_genes = list(mRNA_genes.intersection(cnv_genes))
+#
+#     mRNA_var = dataframes['mRNATPM_map'][overlapping_genes].std()
+#     cnv_var = dataframes['cnv_map'][overlapping_genes].std()
+#
+#     top_mRNA_genes = mRNA_var.nlargest(min(10, len(mRNA_var))).index.tolist() ## change later
+#     top_cnv_genes = cnv_var.nlargest(min(10, len(cnv_var))).index.tolist()
+#     top_genes = list(set(top_mRNA_genes) & set(top_cnv_genes))
+#
+#     # top_genes = overlapping_genes   ## keep all the genes
+#
+#     # all_genes = list(overlapping_genes)
+#     return overlapping_genes, top_genes
 
 
 ### filter function
-def impute_df(dataframes, all_genes, top_genes):
+# def impute_df(dataframes, all_genes, top_genes):
+def impute_df(dataframes):
+
     processed_dataframes = {}
     processed_dataframes['survival'] = dataframes['survival']
     processed_dataframes['clinical'] = dataframes['clinical']
@@ -42,10 +47,14 @@ def impute_df(dataframes, all_genes, top_genes):
         if df.max().max() > 100:
             df = np.log2(df + 1)
 
-        unique_genes = set(df.columns) - set(all_genes)
-        selected_genes = list(set(top_genes).union(unique_genes))
-        df = df[selected_genes]
+        # df = df.iloc[:, 1:100]   ## delete later
+
+        # unique_genes = set(df.columns) - set(all_genes)
+        # selected_genes = list(set(top_genes).union(unique_genes))
+        # selected_genes = list(set(selected_genes).intersection(df.columns))
+        # df = df[selected_genes]
         processed_dataframes[name] = df
+
     return processed_dataframes
 
 
@@ -162,7 +171,12 @@ reg_type = "group_lasso"  # available: 'lasso', 'l2', 'group_lasso', 'sparse_gro
 initial_learning_rate = 0.0001
 max_steps = 100
 
-def fit(TrainDataset, batch_size, fold, seed):
+def fit(TrainDataset, batch_size, dataset, current_time, fold):
+    if os.path.exists(os.path.join("./", save_folder, dataset)) == False:
+        os.makedirs(os.path.join("./", save_folder, dataset))
+    if os.path.exists(os.path.join("./", save_folder, dataset, 'Time' + str(current_time))) == False:
+        os.makedirs(os.path.join("./", save_folder, dataset, 'Time' + str(current_time)))
+
     feature_groups = TrainDataset.train.feature_groups
     feature_size = TrainDataset.train.feature_size
     dm.FEATURE_SIZE = feature_size
@@ -184,6 +198,7 @@ def fit(TrainDataset, batch_size, fold, seed):
         sess.run(init)
 
         for step in range(max_steps):
+            print('Training step: ', step)
             feed_dict = mod.fill_feed_dict(TrainDataset.train.next_batch(batch_size), feature_pl, at_risk_pl, date_pl,
                                            censor_pl)
             feed_dict[isTrain_pl] = True
@@ -192,11 +207,11 @@ def fit(TrainDataset, batch_size, fold, seed):
             if (step + 1) % 5 == 0:
                 print('Step: %d' % (step + 1))
             if (step + 1) == max_steps:
-                checkpoint_file = os.path.join("./", save_folder, fold + str(seed) + saver_file_prefix)
+                checkpoint_file = os.path.join("./", save_folder, dataset, 'Time' + str(current_time), 'Fold' + str(fold) + saver_file_prefix)
                 saver.save(sess, checkpoint_file, global_step=step)
 
 
-def predict(dict, group, fold, seed):
+def predict(dict, group, dataset, current_time, fold):
     X = pd.concat([dict['mRNATPM_map'], dict['cnv_map'], dict['clinical']], axis=1).to_numpy('float32')
     T = np.ones(X.shape[0])
     O = np.ones(X.shape[0])
@@ -219,7 +234,7 @@ def predict(dict, group, fold, seed):
         # init = tf.global_variables_initializer()
         saver = tf.train.Saver()
         # sess = tf.Session()
-        checkpoint_file = os.path.join("./", save_folder, fold + str(seed) +
+        checkpoint_file = os.path.join("./", save_folder, dataset, 'Time' + str(current_time), 'Fold' + str(fold) +
                                        saver_file_prefix + '-' + str(max_steps - 1))
 
         with tf.Session() as sess:

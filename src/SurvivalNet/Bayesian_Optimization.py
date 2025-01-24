@@ -3,7 +3,7 @@ import numpy as np
 from time import clock
 from CostFunction import cost_func
 
-def tune():
+def tune(dataset, time, fold):
 	"""Tunes hyperparameters of a feed forward net using Bayesian Optimization.
 
 	Returns:
@@ -11,9 +11,13 @@ def tune():
 		x_out: 1D array. Best hyper-parameters found.
 	"""
 	params = {}
-	params['n_iterations'] = 50
+	params['n_iterations'] = 20
 	params['n_iter_relearn'] = 1
 	params['n_init_samples'] = 2
+	params['dataset'] = dataset
+	params['time'] = time
+	params['fold'] = fold
+
 
 	print "*** Model Selection with BayesOpt ***"
 	n = 6  # n dimensions
@@ -22,7 +26,12 @@ def tune():
 	ub = np.array([10, 500, 1., 1., 0., 0.])
 
 	start = clock()
-	mvalue, x_out, _ = bayesopt.optimize(cost_func, n, lb, ub, params)
+	def cost_func_with_dataset(x, *args):
+		return cost_func(x, dataset, time, fold, *args)
+
+	mvalue, x_out, _ = bayesopt.optimize(cost_func_with_dataset, n, lb, ub, params)
+
+	# mvalue, x_out, _ = bayesopt.optimize(cost_func, n, lb, ub, params)
 
 	# Usage of BayesOpt with discrete set of values for hyper-parameters.
 
@@ -38,4 +47,4 @@ def tune():
 
 
 if __name__=='__main__':
-	tune()     
+	tune()

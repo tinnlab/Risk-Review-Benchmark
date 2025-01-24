@@ -676,4 +676,5 @@ dependencies:
       - tables==3.9.2
       - tensorflow-addons==0.16.1
       - ujson==5.8.0
+      - prefetch_generator
 prefix: /home/dungp/miniconda3/envs/rp-review-env2

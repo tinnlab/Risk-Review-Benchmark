@@ -54,6 +54,9 @@ def impute_df(dataframes):
         else:
             if df.max().max(skipna=True) > 100:
                 df = np.log2(df + 1)
+
+            df = df.iloc[:, 1:1000] ## delete later
+
             if df.isna().any().any():
                 df = df.dropna(axis=1, how='all')  ## drop columns with all na values
                 # KNN Imputation with k=15
@@ -91,14 +94,29 @@ def process_traindf(train_dataframes):
         if np.max(array) > 100:
             array = np.log2(array + 1)
 
-        q30 = np.quantile(array, 0.3, axis=0)
-        q70 = np.quantile(array, 0.7, axis=0)
-        quant = {'q30': q30, 'q70': q70}
+        if name == 'mRNATPM':
+            q30 = np.quantile(array, 0.3, axis=0)
+            q70 = np.quantile(array, 0.7, axis=0)
+            quant = {'q30': q30, 'q70': q70}
 
-        disc_array1 = np.where(array < quant['q30'], -1, 0)
-        disc_array2 = np.where(array > quant['q70'], 1, 0)
-        disc_array = disc_array1 + disc_array2
-        df_new = pd.DataFrame(disc_array, columns=df.columns, index=df.index)
+            disc_array1 = np.where(array < quant['q30'], -1, 0)
+            disc_array2 = np.where(array > quant['q70'], 1, 0)
+            disc_array = disc_array1 + disc_array2
+            df_new = pd.DataFrame(disc_array, columns=df.columns, index=df.index)
+
+        if name == 'cnv':
+            q20 = np.quantile(array, 0.2, axis=0)
+            q40 = np.quantile(array, 0.4, axis=0)
+            q60 = np.quantile(array, 0.6, axis=0)
+            q80 = np.quantile(array, 0.8, axis=0)
+            quant = {'q20': q20, 'q40': q40, 'q60': q60, 'q80': q80}
+
+            disc_array1 = np.where(array < quant['q20'], -2, 0)
+            disc_array2 = np.where((array >= quant['q20']) & (array < quant['q40']), -1, 0)
+            disc_array3 = np.where((array >= quant['q60']) & (array < quant['q80']), 1, 0)
+            disc_array4 = np.where(array >= quant['q80'], 2, 0)
+            disc_array = disc_array1 + disc_array2 + disc_array3 + disc_array4
+            df_new = pd.DataFrame(disc_array, columns=df.columns, index=df.index)
         processed_train_dataframes[name] = df_new
         stats[name] = quant
     return (processed_train_dataframes, stats, scalers)
@@ -131,9 +149,17 @@ def process_testdf(test_dataframes, stats, scalers):
         if name in stats:
             stat = stats[name]
 
-            disc_array1 = np.where(array < stat['q30'], -1, 0)
-            disc_array2 = np.where(array > stat['q70'], 1, 0)
-            array = disc_array1 + disc_array2
+            if name == 'mRNATPM':
+                disc_array1 = np.where(array < stat['q30'], -1, 0)
+                disc_array2 = np.where(array > stat['q70'], 1, 0)
+                array = disc_array1 + disc_array2
+
+            if name == 'cnv':
+                disc_array1 = np.where(array < stat['q20'], -2, 0)
+                disc_array2 = np.where((array >= stat['q20']) & (array < stat['q40']), -1, 0)
+                disc_array3 = np.where((array >= stat['q60']) & (array < stat['q80']), 1, 0)
+                disc_array4 = np.where(array >= stat['q80'], 2, 0)
+                array = disc_array1 + disc_array2 + disc_array3 + disc_array4
         df_new = pd.DataFrame(array, columns=df.columns, index=df.index)
         processed_test_dataframes[name] = df_new
     return processed_test_dataframes
@@ -414,6 +440,7 @@ class MDNNMD():
 
             config = tf.ConfigProto()
             config.gpu_options.per_process_gpu_memory_fraction = 0.3
+
             sess = tf.InteractiveSession(config=config)
             tf.global_variables_initializer().run()
 
