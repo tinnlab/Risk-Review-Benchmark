@@ -1,7 +1,9 @@
 
-This repository contains the code to reproduce the benchmark of risk prediction methods for the manuscript:
+This repository contains the code to reproduce the benchmark of survival prediction methods for the manuscript:
 
 **A Comprehensive Review of Cancer Survival Prediction Using Multi-Omics Integration and Clinical Variables**
+
+The analysis was conducted on an Ubuntu Linux system (kernel 5.15.0-130) with x86_64 architecture.
 
 ## Steps to Reproduce the Results
 
