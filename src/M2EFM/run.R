@@ -150,7 +150,7 @@ run <- function(datPath, Probes_remove, resPath, timerecPath) {
         patientIDs <- rownames(survival)[all_folds$splits[[fold]]$in_id]
       })
 
-      lapply(1:10, function(fold) {
+      lapply(c(1:10), function(fold) {
         print(paste0('Running Fold: ', fold))
         trainIndex <- all_folds[[fold]]
         valIndex <- setdiff(rownames(survival), trainIndex)

@@ -14,6 +14,10 @@ if (!require("keras")) {
 if (!require("compound.Cox")) {
   install.packages('compound.Cox', repos='http://cran.us.r-project.org', dependencies=TRUE)
 }
+if (!require("rsample")) {
+  install.packages("rsample")
+}
+library(rsample)
 
 
 library(tidyverse)
@@ -308,7 +312,7 @@ run <- function(datPath, resPath, timerecPath, IslandProbes, LncRNAList) {
         patientIDs <- rownames(survival)[all_folds$splits[[fold]]$in_id]
       })
 
-      lapply(1:10, function(fold) {
+      lapply(c(1:10), function(fold) {
         # if (fold != 10){
         #   return(NULL)
         # }
