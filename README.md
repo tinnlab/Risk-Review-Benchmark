@@ -45,3 +45,5 @@ JupyterLab Installation: If JupyterLab is not installed by default in your Conda
 conda install -c conda-forge jupyterlab
 ```
 
+Since we already defined the kernel for each notebook, users can just activate the rp-review-env1 conda environment, start Jupyter Lab and then navigate to each notebook to run all the analysis. 
+

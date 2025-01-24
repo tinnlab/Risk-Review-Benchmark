@@ -48,6 +48,7 @@ pip install ipykernel
 python -m ipykernel install --user --name rp-review-env5 --display-name "rp-review-env5"
 
 # Install bayesopt
+sudo apt-get update
 sudo apt install -y libboost-dev cmake cmake-curses-gui g++ octave liboctave-dev freeglut3-dev || true
 git clone https://github.com/rmcantin/bayesopt
 cd bayesopt
