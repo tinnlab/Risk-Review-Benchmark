@@ -10,8 +10,8 @@ from models import create_model
 from util.visualizer import Visualizer
 
 
-YChr_Genes = pd.read_csv("/nfs/blanche/share/daotran/SurvivalPrediction/AllData/YChr_Genes.csv", header=0, sep=",")
-Remove_MethProbes = pd.read_csv("/nfs/blanche/share/daotran/SurvivalPrediction/AllData/Remove_MethProbes.csv", header=0, sep=",")
+YChr_Genes = pd.read_csv("../../AllData/YChr_Genes.csv", header=0, sep=",")
+Remove_MethProbes = pd.read_csv("../../AllData/Remove_MethProbes.csv", header=0, sep=",")
 
 
 ## set up some parameters

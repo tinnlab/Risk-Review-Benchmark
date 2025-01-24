@@ -1,16 +1,15 @@
 import sys
 import shutil
 sys.path.append("./")
-# sys.path.append("/data/daotran/Cancer_RP/Benchmark/ReviewPaper_MethodRun/OmiEmbed")
 
 import os
-import argparse
+import time
 import warnings
 from functools import reduce
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import StratifiedKFold
+
 import pandas as pd
 import numpy as np
-import torch
 from helper_process import *
 
 # torch.cuda.empty_cache()
@@ -23,37 +22,37 @@ os.environ["NUMEXPR_NUM_THREADS"] = "1"
 
 # datPath = '/nfs/blanche/share/daotran/SurvivalPrediction/AllData/ReviewPaper_Data'
 # resPath = '/data/dungp/projects_catalina/risk-review/benchmark/run-results'
-datPath = '../../AllData/ReviewPaper_Data'
+datPath = '../../AllData/ReviewPaper_Data_5kfeats'
 resPath = '../../run-results'
+timerecPath = "../../time-rec"
 
-parser = argparse.ArgumentParser()
-parser.add_argument('--dataset', type=str, required=True)
-parser.add_argument('--FoldID', type=str, required=True)
-args = parser.parse_args()
-
-# Get parameters
-fold = args.dataset  # This gets the dataset argument
-seed = int(args.FoldID)
+dataset = param.dataset # This gets the dataset argument
+current_time = int(param.cvtime)
+fold_assign = int(param.FoldID)
 
 if __name__ == "__main__":
     if os.path.exists(resPath + "/OmiEmbed") == False:
         os.makedirs(resPath + "/OmiEmbed")
+    if os.path.exists(timerecPath + "/OmiEmbed") == False:
+        os.makedirs(timerecPath + "/OmiEmbed")
 
     if os.path.exists("./TCGA-data") == False:
         os.makedirs("./TCGA-data")
 
     warnings.filterwarnings('ignore')
     # Get parameters
-    print("****** dataset_seed: " + fold + "_" + str(seed) + " ******")
-    if os.path.exists(resPath + "/OmiEmbed/" + fold) == False:
-        os.makedirs(resPath + "/OmiEmbed/" + fold)
+    print("****** dataset_time_fold: " + dataset + "_" + str(current_time) + "_" + str(fold_assign) + " ******")
+    if os.path.exists(resPath + "/OmiEmbed/" + dataset) == False:
+        os.makedirs(resPath + "/OmiEmbed/" + dataset)
+    if os.path.exists(timerecPath + "/OmiEmbed/" + dataset) == False:
+        os.makedirs(timerecPath + "/OmiEmbed/" + dataset)
 
     dataTypes = ["mRNATPM", "cnv", "miRNA", "meth450", "clinical", "survival"]
     dataTypesUsed = ["mRNATPM", "miRNA", "meth450", "clinical", "survival"]
 
     dataList = {}
     for dataType in dataTypes:
-        df = pd.read_csv(datPath + "/" + fold + "/" + dataType + ".csv")
+        df = pd.read_csv(datPath + "/" + dataset + "/" + dataType + ".csv", header=0, index_col=0)
         dataList[dataType] = df
 
     common_rows = reduce(
@@ -67,74 +66,95 @@ if __name__ == "__main__":
     common_dataList = filim_df(common_dataList)
 
     survival_df = common_dataList['survival']
-    alive_patients = survival_df[survival_df['status'] == 0].index.tolist()
-    dead_patients = survival_df[survival_df['status'] == 1].index.tolist()
+    skf = StratifiedKFold(n_splits=10, shuffle=True, random_state=current_time)
 
-    alive_train, alive_test = train_test_split(alive_patients, test_size=0.2, random_state=seed)
-    dead_train, dead_test = train_test_split(dead_patients, test_size=0.2, random_state=seed)
-    train_patients = alive_train + dead_train
-    test_patients = alive_test + dead_test
+    if os.path.exists(os.path.join(resPath, "OmiEmbed", dataset, 'Time' + str(current_time))) == False:
+        os.makedirs(os.path.join(resPath, "OmiEmbed", dataset, 'Time' + str(current_time)))
+    if os.path.exists(os.path.join(timerecPath, "OmiEmbed", dataset, 'Time' + str(current_time))) == False:
+        os.makedirs(os.path.join(timerecPath, "OmiEmbed", dataset, 'Time' + str(current_time)))
 
-    train_dataframes = {name: df.loc[train_patients]
-                        for name, df in common_dataList.items()}
+    for fold, (train_idx, val_idx) in enumerate(skf.split(np.zeros(len(survival_df['status'])), survival_df['status']), 1):
+        if fold != fold_assign:
+            continue
+        print(fold)
 
-    test_dataframes = {name: df.loc[test_patients]
-                       for name, df in common_dataList.items()}
+        train_dataframes = {name: df.iloc[train_idx]
+                            for name, df in common_dataList.items()}
 
-    train_dataframes, scalers = process_traindf(train_dataframes)
-    test_dataframes = process_testdf(test_dataframes, scalers)
+        test_dataframes = {name: df.iloc[val_idx]
+                           for name, df in common_dataList.items()}
 
-    survTrain = train_dataframes['survival']
-    survTest = test_dataframes['survival']
-    save_df(train_dataframes)
+        train_dataframes, scalers = process_traindf(train_dataframes)
+        test_dataframes = process_testdf(test_dataframes, scalers)
 
-    try:
-        train()
+        survTrain = train_dataframes['survival']
+        survTest = test_dataframes['survival']
+        save_df(train_dataframes)
 
-        ## prediction
-        cb_df = merge_df(train_dataframes, test_dataframes)
-        save_df(cb_df)
-        surv_random = cb_df['survival'].copy()
-        surv_random['status'] = 1
-        np.random.seed(seed)  # Set random seed
-        surv_random['time'] = np.random.randint(1, 1001, size=len(surv_random))
-        surv_random.to_csv("./TCGA-data/survival.tsv", sep='\t', header=True)
-        predict()
+        train_patients = survTrain.index
+        test_patients = survTest.index
 
-        predAll = pd.read_csv("./checkpoints/test/down_output/survival_function.tsv",
-                              sep="\t", header=0, index_col=0)
-        predTrain = predAll.loc[train_patients,]
-        predVal = predAll.loc[test_patients,]
+        start_time = time.time()
 
-        unique_time = [round(float(col)) for col in predAll.columns]
-        column_names = [f"predTrain_{time}" for time in unique_time]
-        predTrain.columns = column_names
+        try:
+            train()
 
-        column_names = [f"predVal_{time}" for time in unique_time]
-        predVal.columns = column_names
-    except:
-        time_list = list(range(0, survTrain['time'].max() + 10, 100))
-        column_names = [f"predTrain_{time}" for time in time_list]
-        predTrain = pd.DataFrame(np.nan,
-                              index=range(len(survTrain)),
-                              columns=column_names)
+            ## prediction
+            cb_df = merge_df(train_dataframes, test_dataframes)
+            save_df(cb_df)
+            surv_random = cb_df['survival'].copy()
+            surv_random['status'] = 1
+            np.random.seed(1234)  # Set random seed
+            surv_random['time'] = np.random.randint(1, 1001, size=len(surv_random))
+            surv_random.to_csv("./TCGA-data/survival.tsv", sep='\t', header=True)
+            predict()
 
-        time_list = list(range(0, survTest['time'].max() + 10, 100))
-        column_names = [f"predVal_{time}" for time in time_list]
-        predVal = pd.DataFrame(np.nan,
-                                 index=range(len(survTest)),
-                                 columns=column_names)
+            predAll = pd.read_csv("./checkpoints/test/down_output/survival_function.tsv",
+                                  sep="\t", header=0, index_col=0)
+            predTrain = predAll.loc[train_patients,]
+            predVal = predAll.loc[test_patients,]
 
-        predTrain.index = survTrain.index
-        predVal.index = survTest.index
+            unique_time = [round(float(col)) for col in predAll.columns]
+            column_names = [f"predTrain_{time}" for time in unique_time]
+            predTrain.columns = column_names
 
-    predTrain = pd.concat([predTrain, survTrain], axis=1)
-    predVal = pd.concat([predVal, survTest], axis=1)
+            column_names = [f"predVal_{time}" for time in unique_time]
+            predVal.columns = column_names
+        except:
+            time_list = list(range(0, survTrain['time'].max() + 10, 100))
+            column_names = [f"predTrain_{time}" for time in time_list]
+            predTrain = pd.DataFrame(np.nan,
+                                     index=range(len(survTrain)),
+                                     columns=column_names)
 
-    predTrain.to_csv(resPath + "/OmiEmbed" + '/' + fold + '/Train_Res_' + str(seed) + '.csv', sep=',',
-                     header=True)
-    predVal.to_csv(resPath + "/OmiEmbed" + '/' + fold + '/Val_Res_' + str(seed) + '.csv', sep=',',
-                   header=True)
+            time_list = list(range(0, survTest['time'].max() + 10, 100))
+            column_names = [f"predVal_{time}" for time in time_list]
+            predVal = pd.DataFrame(np.nan,
+                                   index=range(len(survTest)),
+                                   columns=column_names)
 
-    clear_files("./TCGA-data")
-    shutil.rmtree("./checkpoints")
+            predTrain.index = survTrain.index
+            predVal.index = survTest.index
+
+        end_time = time.time()
+        record_time = end_time - start_time
+        print(f'Running Time: {record_time:.2f} seconds')
+
+        time_df = pd.DataFrame({
+            'dataset': [dataset],
+            'time_point': [current_time],
+            'fold': [fold],
+            'runtime_seconds': [record_time]
+        })
+
+        predTrain = pd.concat([predTrain, survTrain], axis=1)
+        predVal = pd.concat([predVal, survTest], axis=1)
+
+        predTrain.to_csv(resPath + "/OmiEmbed" + '/' + dataset + '/Time' + str(current_time) + '/Train_Res_' + str(fold) + '.csv', sep=',',
+                         header=True)
+        predVal.to_csv(resPath + "/OmiEmbed" + '/' + dataset + '/Time' + str(current_time) + '/Val_Res_' + str(fold) + '.csv', sep=',',
+                       header=True)
+        time_df.to_csv(timerecPath + "/OmiEmbed" + '/' + dataset + '/Time' + str(current_time) + '/TimeRec_' + str(fold) + '.csv', header=True)
+
+        clear_files("./TCGA-data")
+        shutil.rmtree("./checkpoints")

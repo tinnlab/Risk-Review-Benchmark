@@ -148,7 +148,3 @@ def gen_preddat(test_dataframes, train_dataframes, cate_cols):
             pred_dict['miRNA'] = x_train_all
     return pred_dict
 
-
-
-
-

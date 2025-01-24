@@ -29,10 +29,12 @@ class BasicParams:
                             help='which dataset to run')
         parser.add_argument('--FoldID', type=str,
                             help='which fold to run cross-validation')
+        parser.add_argument('--cvtime', type=str,
+                            help='which time of cross-validation is running')
 
         # parser.add_argument('--gpu_ids', type=str, default='0',
         #                     help='which GPU would like to use: e.g. 0 or 0,1, -1 for CPU')
-        parser.add_argument('--gpu_ids', type=str, default='-1',
+        parser.add_argument('--gpu_ids', type=str, default='0',
                             help='which GPU would like to use: e.g. 0 or 0,1, -1 for CPU')
 
         parser.add_argument('--checkpoints_dir', type=str, default='./checkpoints',
