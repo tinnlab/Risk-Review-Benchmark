@@ -7,6 +7,8 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 from torch.autograd import Variable
+# from torch.utils.checkpoint import checkpoint
+
 import gc
 
 class SALMON(nn.Module):
@@ -22,7 +24,7 @@ class SALMON(nn.Module):
         self.encoder2 = nn.Sequential(nn.Linear(length_of_data['miRNA'], hidden2),nn.Sigmoid())
         self.classifier = nn.Sequential(nn.Linear(hidden1 + hidden2 + \
                                             hidden_cnv + hidden_clinical, label_dim),nn.Sigmoid())
-        
+
     def forward(self, x):
         x_d = None
 

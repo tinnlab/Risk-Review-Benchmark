@@ -99,9 +99,9 @@ def process_df(train_dataframes, test_dataframes):
 
         if name == 'mRNATPM' or name == 'miRNA':
             gene_means = df_train.mean(axis=0)
-            mean_threshold = gene_means.quantile(0.6)
+            mean_threshold = gene_means.quantile(0.2)
             gene_variances = df_train.var(axis=0)
-            variance_threshold = gene_variances.quantile(0.6)
+            variance_threshold = gene_variances.quantile(0.2)
             df_train_new = df_train.loc[:, (gene_means > mean_threshold) & (gene_variances > variance_threshold)]
             # df_test_new = df_test.loc[:, df_train.columns]
 
@@ -126,6 +126,3 @@ def process_df(train_dataframes, test_dataframes):
         processed_test_dataframes[name] = df_test_new
 
     return processed_train_dataframes, processed_test_dataframes
-
-
-

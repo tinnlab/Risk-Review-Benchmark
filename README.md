@@ -31,7 +31,9 @@ jupyter lab
 ```
 Once the command runs, it will provide a link to open Jupyter Lab in your browser.
 
-Inside Jupyter Lab, navigate to the notebooks and run each method one by one. 
+Inside Jupyter Lab, navigate to the notebooks and run each method one by one.
+
+If encountering any error when running a method, restart the kernel.
 
 ### 4. Generate Metrics
 After running the notebooks, results will be stored in the run-results folder. To generate the performance metrics, open and run the ```metrics-generate.ipynb``` notebook.
