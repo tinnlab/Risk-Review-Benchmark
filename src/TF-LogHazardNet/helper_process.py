@@ -38,9 +38,20 @@ def eval_func(surv_test, duration_test, event_test):
 
 ## train function
 def fit(list_train, surv_train):
+    batch_size = n_batch
+    epochs = 100
+    callbacks = [tt.cb.EarlyStopping()]
+
     df_train = pd.concat(list_train, axis=1)
     df_train, df_val = train_test_split(df_train, test_size=0.2, random_state=1234)
     surv_train, surv_val = train_test_split(surv_train, test_size=0.2, random_state=1234)
+
+    train_size = len(surv_train)
+    last_batch_size = train_size % batch_size
+    if last_batch_size == 1:
+        # Remove the last sample from df_train and surv_train
+        df_train = df_train.iloc[:-1]
+        surv_train = surv_train.iloc[:-1]
 
     # expDat = pyreadr.read_r(datPath + test_dataset + "/exp.rds")[None]
     # x_test = np.array(copy.copy(expDat).astype('float32'))
@@ -52,6 +63,7 @@ def fit(list_train, surv_train):
     E_train = np.array(surv_train["status"])
     Y_val = np.array(surv_val["time"])
     E_val = np.array(surv_val["status"])
+
 
     df_train["time"] = Y_train.astype('float32')
     df_train["status"] = E_train.astype('float32')
@@ -68,7 +80,7 @@ def fit(list_train, surv_train):
     val = (x_val, y_surv_val)
 
     # durations_test, events_test = get_target(df_test)
-    durations_train, events_train = get_target(df_train)
+    # durations_train, events_train = get_target(df_train)
 
     in_features = x_train.shape[1]
     out_features = labtrans.out_features
@@ -91,11 +103,6 @@ def fit(list_train, surv_train):
     _ = torch.manual_seed(1234)
 
     model = LogisticHazard(net2, tt.optim.Adam(0.01), duration_index=labtrans.cuts)
-
-    batch_size = n_batch
-    epochs = 100
-    callbacks = [tt.cb.EarlyStopping()]
-
     model.fit(x_train, y_surv_train, batch_size, epochs, callbacks, val_data=val)
     return model
 
