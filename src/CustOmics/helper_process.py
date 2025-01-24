@@ -2,8 +2,9 @@ from sklearn.preprocessing import MinMaxScaler
 import pandas as pd
 import numpy as np
 
+
 ## remove columns with NA/ zero std for each data type
-def filter_df(dataframes):
+def filter_df(dataframes, genes_df, keep_probes_df, remove_probes_df):
     processed_dataframes = {}
     processed_dataframes['survival'] = dataframes['survival']
     processed_dataframes['clinical'] = dataframes['clinical']
@@ -21,12 +22,27 @@ def filter_df(dataframes):
         if df.max().max() > 100:
             df = np.log2(df + 1)
 
+        if name == 'mRNATPM':
+            genes = set(genes_df.iloc[:, 0])
+            def extract_gene(col_name):
+                return col_name.split('___')[0]
+            matching_cols = [col for col in df.columns
+                             if extract_gene(col) not in genes]
+            df = df[matching_cols]
+
+        if name == 'meth450':
+            keep_probes = set(keep_probes_df.iloc[:, 0])
+            remove_probes = set(remove_probes_df.iloc[:, 0])
+            keep_probes = keep_probes - remove_probes
+            df = df[df.columns[df.columns.isin(keep_probes)]]
+
         # Remove columns with zero standard deviation for each data type
         cols_to_keep = [col for col in df.columns if df[col].std() > 0]
         df = df[cols_to_keep]
         processed_dataframes[name] = df
 
     return processed_dataframes
+
 
 ## process train data
 def process_traindf(train_dataframes):

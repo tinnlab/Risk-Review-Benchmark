@@ -2,14 +2,21 @@ import torch.nn as nn
 import math
 from collections import OrderedDict
 import torch
+import gc
 import numpy as np
 import pandas as pd
 from sklearn.impute import KNNImputer
 from sklearn.preprocessing import StandardScaler
 import random
 
+# torch.cuda.empty_cache()
+# torch.cuda.memory.empty_cache()
+# torch.cuda.set_per_process_memory_fraction(0.8)  # Use only 80% of available memory
+
 # Device configuration
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+# device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+device = torch.device('cpu')
+
 
 ## set some hyperparameter
 meta_lr = 1e-4
@@ -165,6 +172,8 @@ def calculate_cox_loss(df_in, theta):
 
 ## train function
 def fit(mat, source_tasks):
+    torch.cuda.empty_cache()
+    gc.collect()
     df_cox = mat
     n = math.ceil(df_cox.shape[0] * 0.2)
     input_dim = df_cox.shape[1] - 2
@@ -331,7 +340,7 @@ def fit(mat, source_tasks):
     # Train on source tasks
     print("Starting training.")
     maml = MAML(input_dim, model, inner_lr=inner_lr, meta_lr=meta_lr)
-    maml.main_loop_source(num_iterations=10)
+    maml.main_loop_source(num_iterations=100)
     # torch.save({
     #     'model_state_dict': model.state_dict(),
     #     'optimizer_state_dict': maml.meta_optimiser.state_dict(),
