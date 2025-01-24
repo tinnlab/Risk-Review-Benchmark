@@ -1,6 +1,6 @@
 import os
 from functools import reduce
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import StratifiedKFold
 import pandas as pd
 import numpy as np
 
@@ -10,29 +10,30 @@ os.environ["MKL_NUM_THREADS"] = "1"
 os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
 os.environ["NUMEXPR_NUM_THREADS"] = "1"
 
-datPath = '/nfs/blanche/share/daotran/SurvivalPrediction/AllData/ReviewPaper_Data'
-processedPath = '/nfs/blanche/share/daotran/SurvivalPrediction/TF-ProcessData'
+## Please update the below paths if necessary
+datPath = '../../AllData/ReviewPaper_Data_5kfeats'
+processedPath = '../../AllData/TF-ProcessData_cv2'
 
 if os.path.exists(processedPath) == False:
     os.makedirs(processedPath)
 
-all_folds = ["TCGA-BLCA", "TCGA-BRCA", "TCGA-CESC", "TCGA-COAD", "TCGA-ESCA",
+alldatasets = ["TCGA-BLCA", "TCGA-BRCA", "TCGA-CESC", "TCGA-COAD", "TCGA-ESCA",
     "TCGA-HNSC", "TCGA-KIRC", "TCGA-KIRP", "TCGA-LAML", "TCGA-LGG",
     "TCGA-LIHC", "TCGA-LUAD", "TCGA-LUSC", "TCGA-PAAD", "TCGA-SARC",
     "TCGA-STAD", "TCGA-UCEC"]
 
-for fold in all_folds:
-    print(fold)
+for dataset in alldatasets:
+    print(dataset)
 
-    if os.path.exists(processedPath + '/' + fold) == False:
-        os.makedirs(processedPath + '/' + fold)
+    if os.path.exists(processedPath + '/' + dataset) == False:
+        os.makedirs(processedPath + '/' + dataset)
 
     dataTypes = ["mRNATPM_map", "cnv_map", "miRNA", "meth450_map", "clinical", "survival"]
     dataTypesUsed = ["mRNATPM_map", "cnv_map", "meth450_map", "clinical", "survival"]
 
     dataList = {}
     for dataType in dataTypes:
-        df = pd.read_csv(datPath + "/" + fold + "/" + dataType + ".csv")
+        df = pd.read_csv(datPath + "/" + dataset + "/" + dataType + ".csv", header=0, index_col=0)
         dataList[dataType] = df
 
     common_rows = reduce(
@@ -69,33 +70,33 @@ for fold in all_folds:
 
     ### split data in to train and test set
     survival_df = common_dataList['survival']
-    alive_patients = survival_df[survival_df['status'] == 0].index.tolist()
-    dead_patients = survival_df[survival_df['status'] == 1].index.tolist()
 
-    for seed in range(1, 11):
-        print("****** seed " + str(seed) + " ******")
-        alive_train, alive_test = train_test_split(alive_patients, test_size=0.2, random_state=seed)
-        dead_train, dead_test = train_test_split(dead_patients, test_size=0.2, random_state=seed)
-        train_patients = alive_train + dead_train
-        test_patients = alive_test + dead_test
+    for current_time in range(1, 6):
+        print(f'Running Time: {current_time}')
 
-        train_dataframes = {name: df.loc[train_patients]
-                            for name, df in common_dataList.items()}
+        if os.path.exists(os.path.join(processedPath, dataset, 'Time' + str(current_time))) == False:
+            os.makedirs(os.path.join(processedPath, dataset, 'Time' + str(current_time)))
+        skf = StratifiedKFold(n_splits=10, shuffle=True, random_state=current_time)
 
-        test_dataframes = {name: df.loc[test_patients]
-                           for name, df in common_dataList.items()}
+        for fold, (train_idx, val_idx) in enumerate(skf.split(np.zeros(len(survival_df['status'])), survival_df['status']), 1):
+            print(f'Running Fold: {fold}')
+            train_dataframes = {name: df.iloc[train_idx]
+                                for name, df in common_dataList.items()}
 
-        train_dataframes['mRNATPM_map'].to_csv(processedPath + '/' + fold + '/mRNA_train_' + str(seed) + '.csv', sep=',', header=True)
-        train_dataframes['cnv_map'].to_csv(processedPath + '/' + fold + '/cnv_train_' + str(seed) + '.csv', sep=',', header=True)
-        train_dataframes['meth450_map'].to_csv(processedPath + '/' + fold + '/meth_train_' + str(seed) + '.csv', sep=',', header=True)
-        train_dataframes['clinical'].to_csv(processedPath + '/' + fold + '/clinical_train_' + str(seed) + '.csv', sep=',', header=True)
-        train_dataframes['survival'].to_csv(processedPath + '/' + fold + '/survival_train_' + str(seed) + '.csv', sep=',', header=True)
+            test_dataframes = {name: df.iloc[val_idx]
+                               for name, df in common_dataList.items()}
 
-        test_dataframes['mRNATPM_map'].to_csv(processedPath + '/' + fold + '/mRNA_val_' + str(seed) + '.csv', sep=',', header=True)
-        test_dataframes['cnv_map'].to_csv(processedPath + '/' + fold + '/cnv_val_' + str(seed) + '.csv', sep=',', header=True)
-        test_dataframes['meth450_map'].to_csv(processedPath + '/' + fold + '/meth_val_' + str(seed) + '.csv', sep=',', header=True)
-        test_dataframes['clinical'].to_csv(processedPath + '/' + fold + '/clinical_val_' + str(seed) + '.csv', sep=',', header=True)
-        test_dataframes['survival'].to_csv(processedPath + '/' + fold + '/survival_val_' + str(seed) + '.csv', sep=',', header=True)
+            train_dataframes['mRNATPM_map'].to_csv(processedPath + '/' + dataset + '/Time' + str(current_time) + '/mRNA_train_' + str(fold) + '.csv', sep=',', header=True)
+            train_dataframes['cnv_map'].to_csv(processedPath + '/' + dataset + '/Time' + str(current_time) + '/cnv_train_' + str(fold) + '.csv', sep=',', header=True)
+            train_dataframes['meth450_map'].to_csv(processedPath + '/' + dataset + '/Time' + str(current_time) + '/meth_train_' + str(fold) + '.csv', sep=',', header=True)
+            train_dataframes['clinical'].to_csv(processedPath + '/' + dataset + '/Time' + str(current_time) + '/clinical_train_' + str(fold) + '.csv', sep=',', header=True)
+            train_dataframes['survival'].to_csv(processedPath + '/' + dataset + '/Time' + str(current_time) + '/survival_train_' + str(fold) + '.csv', sep=',', header=True)
+
+            test_dataframes['mRNATPM_map'].to_csv(processedPath + '/' + dataset + '/Time' + str(current_time) + '/mRNA_val_' + str(fold) + '.csv', sep=',', header=True)
+            test_dataframes['cnv_map'].to_csv(processedPath + '/' + dataset + '/Time' + str(current_time) + '/cnv_val_' + str(fold) + '.csv', sep=',', header=True)
+            test_dataframes['meth450_map'].to_csv(processedPath + '/' + dataset + '/Time' + str(current_time) + '/meth_val_' + str(fold) + '.csv', sep=',', header=True)
+            test_dataframes['clinical'].to_csv(processedPath + '/' + dataset + '/Time' + str(current_time) + '/clinical_val_' + str(fold) + '.csv', sep=',', header=True)
+            test_dataframes['survival'].to_csv(processedPath + '/' + dataset + '/Time' + str(current_time) + '/survival_val_' + str(fold) + '.csv', sep=',', header=True)
 
     print('done!')
 
